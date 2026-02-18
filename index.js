@@ -8,7 +8,7 @@ const app = express();
 // 1. Database verbinding
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// Automatische tabel creatie bij opstarten
+// Tabel automatisch aanmaken
 const initDb = async () => {
   try {
     await db.query(`
@@ -42,44 +42,51 @@ const shopify = shopifyApp({
   },
 });
 
-// 3. FORCEER SECURITY HEADERS (De oplossing voor 'verbinding geweigerd')
+// 3. De Fix voor 'Cannot GET /exitiframe'
+// Deze route vertelt Shopify wat er moet gebeuren als de installatie klaar is
+app.get('/exitiframe', (req, res) => {
+  const shop = req.query.shop;
+  const host = req.query.host;
+  res.redirect(`https://${shop}/admin/apps/boring-stock-alert?host=${host}`);
+});
+
+// 4. Beveiliging (CSP)
 app.use((req, res, next) => {
-  const shop = req.query.shop || req.headers['x-shop-id'];
-  res.setHeader("Content-Security-Policy", "frame-ancestors https://*.myshopify.com https://admin.shopify.com;");
+  const shop = req.query.shop;
+  res.setHeader("Content-Security-Policy", `frame-ancestors https://*.myshopify.com https://admin.shopify.com;`);
   next();
 });
 
-// 4. Routes
+// 5. Auth Routes
 app.get('/api/auth', shopify.auth.begin());
 
 app.get('/api/auth/callback', shopify.auth.callback(), async (req, res) => {
-  const { shop, accessToken } = res.locals.shopify.session;
-  await db.query(
-    'INSERT INTO shops (shop_domain, access_token) VALUES ($1, $2) ON CONFLICT (shop_domain) DO UPDATE SET access_token = $2',
-    [shop, accessToken]
-  );
-  
-  // Na installatie: stuur door naar de embedded app link
-  const host = req.query.host;
-  res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/boring-stock-alert?host=${host}`);
+  try {
+    const { shop, accessToken } = res.locals.shopify.session;
+    await db.query(
+      'INSERT INTO shops (shop_domain, access_token) VALUES ($1, $2) ON CONFLICT (shop_domain) DO UPDATE SET access_token = $2',
+      [shop, accessToken]
+    );
+    const host = req.query.host;
+    res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/boring-stock-alert?host=${host}`);
+  } catch (error) {
+    res.status(500).send("Fout tijdens installatie.");
+  }
 });
 
-// De pagina die daadwerkelijk in Shopify verschijnt
+// 6. Het Dashboard
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Boring Stock Alert</title>
-      </head>
-      <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+      <head><meta charset="UTF-8"><title>Boring Stock Alert</title></head>
+      <body style="font-family: sans-serif; text-align: center; padding-top: 100px;">
         <h1>🚀 Boring Stock Alert Dashboard</h1>
-        <p>De verbinding is gelukt! De app draait nu binnen Shopify.</p>
+        <p>Gefeliciteerd! De verbinding is nu 100% gelukt.</p>
       </body>
     </html>
   `);
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Server draait op poort ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Online op poort ${PORT}`));
