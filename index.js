@@ -42,22 +42,25 @@ const shopify = shopifyApp({
   },
 });
 
-// 3. De Fix voor 'Cannot GET /exitiframe'
-// Deze route vertelt Shopify wat er moet gebeuren als de installatie klaar is
+// 3. DE FIX VOOR "VERBINDING GEWEIGERD"
+// We dwingen de browser om het frame te accepteren voor ELKE shop
+app.use((req, res, next) => {
+  const shop = req.query.shop || (req.headers['x-shop-id']);
+  if (shop) {
+    res.setHeader("Content-Security-Policy", `frame-ancestors https://${shop} https://admin.shopify.com;`);
+  } else {
+    res.setHeader("Content-Security-Policy", "frame-ancestors https://*.myshopify.com https://admin.shopify.com;");
+  }
+  next();
+});
+
+// 4. Routes voor Auth en de beruchte exitiframe
 app.get('/exitiframe', (req, res) => {
   const shop = req.query.shop;
   const host = req.query.host;
   res.redirect(`https://${shop}/admin/apps/boring-stock-alert?host=${host}`);
 });
 
-// 4. Beveiliging (CSP)
-app.use((req, res, next) => {
-  const shop = req.query.shop;
-  res.setHeader("Content-Security-Policy", `frame-ancestors https://*.myshopify.com https://admin.shopify.com;`);
-  next();
-});
-
-// 5. Auth Routes
 app.get('/api/auth', shopify.auth.begin());
 
 app.get('/api/auth/callback', shopify.auth.callback(), async (req, res) => {
@@ -68,25 +71,30 @@ app.get('/api/auth/callback', shopify.auth.callback(), async (req, res) => {
       [shop, accessToken]
     );
     const host = req.query.host;
+    // Direct naar de admin omgeving sturen
     res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/boring-stock-alert?host=${host}`);
   } catch (error) {
     res.status(500).send("Fout tijdens installatie.");
   }
 });
 
-// 6. Het Dashboard
+// 5. Het Dashboard (De pagina die binnen Shopify geladen wordt)
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
-      <head><meta charset="UTF-8"><title>Boring Stock Alert</title></head>
-      <body style="font-family: sans-serif; text-align: center; padding-top: 100px;">
-        <h1>🚀 Boring Stock Alert Dashboard</h1>
-        <p>Gefeliciteerd! De verbinding is nu 100% gelukt.</p>
+      <head>
+        <meta charset="UTF-8">
+        <title>Boring Stock Alert</title>
+        <style>body { font-family: sans-serif; text-align: center; padding-top: 50px; }</style>
+      </head>
+      <body>
+        <h1>🚀 Boring Stock Alert is LIVE</h1>
+        <p>Als je dit ziet, werkt de verbinding eindelijk.</p>
       </body>
     </html>
   `);
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Online op poort ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server draait op poort ${PORT}`));
