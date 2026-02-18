@@ -8,7 +8,7 @@ const app = express();
 // 1. Database verbinding
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// Automatische tabel creatie
+// Automatische tabel creatie bij opstarten
 const initDb = async () => {
   try {
     await db.query(`
@@ -42,63 +42,44 @@ const shopify = shopifyApp({
   },
 });
 
-// 3. Middleware voor Security Headers (DIT IS DE FIX VOOR DE GEWEIGERDE VERBINDING)
+// 3. FORCEER SECURITY HEADERS (De oplossing voor 'verbinding geweigerd')
 app.use((req, res, next) => {
-  const shop = req.query.shop;
-  if (shop) {
-    res.setHeader("Content-Security-Policy", `frame-ancestors https://${shop} https://admin.shopify.com;`);
-  }
+  const shop = req.query.shop || req.headers['x-shop-id'];
+  res.setHeader("Content-Security-Policy", "frame-ancestors https://*.myshopify.com https://admin.shopify.com;");
   next();
 });
 
 // 4. Routes
-app.get('/exitiframe', (req, res) => {
-  const shop = req.query.shop;
-  res.redirect(`https://${shop}/admin/apps/boring-stock-alert`);
+app.get('/api/auth', shopify.auth.begin());
+
+app.get('/api/auth/callback', shopify.auth.callback(), async (req, res) => {
+  const { shop, accessToken } = res.locals.shopify.session;
+  await db.query(
+    'INSERT INTO shops (shop_domain, access_token) VALUES ($1, $2) ON CONFLICT (shop_domain) DO UPDATE SET access_token = $2',
+    [shop, accessToken]
+  );
+  
+  // Na installatie: stuur door naar de embedded app link
+  const host = req.query.host;
+  res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/apps/boring-stock-alert?host=${host}`);
 });
 
-app.get(shopify.config.auth.path, shopify.auth.begin());
-
-app.get(
-  shopify.config.auth.callbackPath,
-  shopify.auth.callback(),
-  async (req, res) => {
-    try {
-      const { shop, accessToken } = res.locals.shopify.session;
-      await db.query(
-        'INSERT INTO shops (shop_domain, access_token) VALUES ($1, $2) ON CONFLICT (shop_domain) DO UPDATE SET access_token = $2',
-        [shop, accessToken]
-      );
-      const host = req.query.host;
-      res.redirect(`https://${shop.replace(/https?:\/\//, '')}/admin/apps/boring-stock-alert?host=${host}`);
-    } catch (error) {
-      res.status(500).send("Installatie mislukt.");
-    }
-  }
-);
-
-// Het dashboard dat in Shopify verschijnt
+// De pagina die daadwerkelijk in Shopify verschijnt
 app.get('/', (req, res) => {
   res.send(`
+    <!DOCTYPE html>
     <html>
       <head>
-        <script src="https://unpkg.com/@shopify/app-bridge"></script>
-        <script>
-          var AppBridge = window['app-bridge'];
-          var createApp = AppBridge.default;
-          var app = createApp({
-            apiKey: "${process.env.SHOPIFY_API_KEY}",
-            host: "${new URLSearchParams(window.location.search).get('host')}",
-          });
-        </script>
+        <meta charset="UTF-8">
+        <title>Boring Stock Alert</title>
       </head>
-      <body>
+      <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
         <h1>🚀 Boring Stock Alert Dashboard</h1>
-        <p>De verbinding is eindelijk gelukt!</p>
+        <p>De verbinding is gelukt! De app draait nu binnen Shopify.</p>
       </body>
     </html>
   `);
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Server op poort ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server draait op poort ${PORT}`));
