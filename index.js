@@ -34,7 +34,8 @@ const shopify = shopifyApp({
     apiKey: process.env.SHOPIFY_API_KEY,
     apiSecretKey: process.env.SHOPIFY_API_SECRET,
     scopes: process.env.SCOPES.split(','),
-    hostName: process.env.HOST.replace(/https?:\/\//, ''), // Veiligheidscheck: verwijdert eventuele https:// uit de HOST variabele
+    // Deze regel sloopt eventuele per ongeluk toegevoegde https:// uit de HOST variabele
+    hostName: process.env.HOST.replace(/https?:\/\//, ''), 
     apiVersion: LATEST_API_VERSION,
     isEmbeddedApp: true,
   },
@@ -46,11 +47,10 @@ const shopify = shopifyApp({
 
 // 3. De endpoints instellen
 
-// FIX: Deze vangt de /exitiframe error op
+// Vangt de /exitiframe error op en stuurt correct door naar de Shopify Admin
 app.get('/exitiframe', (req, res) => {
   const shop = req.query.shop;
   const host = req.query.host;
-  // We sturen de gebruiker terug naar de App interface in Shopify
   res.redirect(`https://${shop}/admin/apps/boring-stock-alert?host=${host}`);
 });
 
@@ -71,7 +71,7 @@ app.get(
       );
 
       const host = req.query.host;
-      // BELANGRIJK: We bouwen de URL hier handmatig op om dubbele 'https' te voorkomen
+      // We maken de shop URL hier handmatig schoon om dubbele https te voorkomen
       const cleanShop = shop.replace(/https?:\/\//, '');
       res.redirect(`https://${cleanShop}/admin/apps/boring-stock-alert?host=${host}`);
       
@@ -82,12 +82,12 @@ app.get(
   }
 );
 
-// Eenvoudige startpagina om te zien dat de app leeft
+// Startpagina voor de app
 app.get('/', (req, res) => {
-  res.send('<h1>Boring Stock Alert is Online!</h1><p>De app is succesvol gekoppeld aan Shopify.</p>');
+  res.send('<h1>🚀 Boring Stock Alert is Online!</h1><p>De server werkt en de verbinding met Shopify is hersteld.</p>');
 });
 
 app.get('/health', (req, res) => res.status(200).send('Boringly Healthy!'));
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Online op poort ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server draait op poort ${PORT}`));
